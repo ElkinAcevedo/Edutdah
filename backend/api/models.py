@@ -1,0 +1,156 @@
+from django.db import models
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+
+
+# ─────────────────────────────────────────
+# USUARIO
+# ─────────────────────────────────────────
+class Usuario(models.Model):
+    id = models.AutoField(primary_key=True)
+
+    class Meta:
+        db_table = "usuario"
+        verbose_name = "Usuario"
+        verbose_name_plural = "Usuarios"
+
+    def __str__(self):
+        return f"Usuario #{self.id}"
+
+
+# ─────────────────────────────────────────
+# ESTUDIANTE
+# ─────────────────────────────────────────
+class Estudiante(models.Model):
+
+    TIPO_TDAH_CHOICES = [
+        ("Combinado", "Combinado"),
+        ("Inatento", "Inatento"),
+        ("Hiperactivo", "Hiperactivo"),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=255)
+    edad = models.IntegerField()
+    grado = models.CharField(max_length=100)
+    tipo_tdah = models.CharField(max_length=20, choices=TIPO_TDAH_CHOICES)
+    fortalezas = models.JSONField(default=list)          # text[]
+    atencion_promedio = models.IntegerField(default=0)
+    puntaje_participacion = models.IntegerField(default=0)
+    profesor = models.ForeignKey(
+        Usuario,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="estudiantes",
+        db_column="profesor_id",
+    )
+
+    class Meta:
+        db_table = "estudiante"
+        verbose_name = "Estudiante"
+        verbose_name_plural = "Estudiantes"
+
+    def __str__(self):
+        return self.nombre
+
+
+# ─────────────────────────────────────────
+# MATERIAL ADAPTADO
+# ─────────────────────────────────────────
+class MaterialAdaptado(models.Model):
+
+    DIFICULTAD_CHOICES = [
+        ("Basico", "Básico"),
+        ("Intermedio", "Intermedio"),
+        ("Avanzado", "Avanzado"),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    estudiante = models.ForeignKey(
+        Estudiante,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="materiales",
+        db_column="estudiante_id",
+    )
+    tema = models.CharField(max_length=255)
+    tipo_material = models.CharField(max_length=100)
+    dificultad = models.CharField(max_length=15, choices=DIFICULTAD_CHOICES)
+    contenido_markdown = models.TextField()
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "material_adaptado"
+        verbose_name = "Material Adaptado"
+        verbose_name_plural = "Materiales Adaptados"
+
+    def __str__(self):
+        return f"{self.tema} ({self.dificultad})"
+
+
+# ─────────────────────────────────────────
+# ENTRADA BITÁCORA
+# ─────────────────────────────────────────
+class EntradaBitacora(models.Model):
+
+    CATEGORIA_CHOICES = [
+        ("Alta agitacion", "Alta agitación"),
+        ("Logro positivo", "Logro positivo"),
+        ("Ajuste de entorno", "Ajuste de entorno"),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    estudiante = models.ForeignKey(
+        Estudiante,
+        on_delete=models.CASCADE,
+        related_name="entradas_bitacora",
+        db_column="estudiante_id",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    titulo = models.CharField(max_length=255)
+    descripcion = models.TextField()
+    categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
+    puntaje_atencion = models.IntegerField(
+        default=0,
+        help_text="Valor entre 0 y 100",
+    )
+
+    class Meta:
+        db_table = "entrada_bitacora"
+        verbose_name = "Entrada de Bitácora"
+        verbose_name_plural = "Entradas de Bitácora"
+        ordering = ["-creado_en"]
+
+    def __str__(self):
+        return f"{self.titulo} — {self.estudiante.nombre}"
+
+
+# ─────────────────────────────────────────
+# ESTRATEGIA
+# ─────────────────────────────────────────
+class Estrategia(models.Model):
+
+    CATEGORIA_CHOICES = [
+        ("atencion", "Atención"),
+        ("impulsividad", "Impulsividad"),
+        ("organizacion", "Organización"),
+        ("evaluacion", "Evaluación"),
+        ("transicion", "Transición"),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    titulo = models.CharField(max_length=255)
+    categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
+    descripcion = models.TextField()
+    pasos = models.JSONField(default=list)               # text[]
+    tasa_eficacia = models.IntegerField(default=0)
+    sugerida_por_ia = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "estrategia"
+        verbose_name = "Estrategia"
+        verbose_name_plural = "Estrategias"
+
+    def __str__(self):
+        return self.titulo

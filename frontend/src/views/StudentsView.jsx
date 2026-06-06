@@ -1,72 +1,32 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, UserPlus, Users, AlertCircle, CheckCircle, X } from 'lucide-react'
 import StudentCard from '../components/StudentCard'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MOCK DATA — reemplazar con api.get('/students/') cuando el backend esté listo
-// ─────────────────────────────────────────────────────────────────────────────
-const MOCK_STUDENTS = [
-  {
-    id: 1,
-    name: 'Mateo Gómez',
-    initials: 'MG',
-    avatarGradient: 'from-rose-400 to-pink-500',
-    type: 'TDAH Combinado',
-    age: 8,
-    grade: '3ro B',
-    attention: 55,
-    participation: 6,
-    alerts: 3,
-    strengths: ['Visual', 'Creativo', 'Alta energía'],
-  },
-  {
-    id: 2,
-    name: 'Sofía Vargas',
-    initials: 'SV',
-    avatarGradient: 'from-sky-400 to-blue-500',
-    type: 'TDAH Inatento',
-    age: 9,
-    grade: '3ro B',
-    attention: 78,
-    participation: 8,
-    alerts: 1,
-    strengths: ['Visual', 'Artística'],
-  },
-  {
-    id: 3,
-    name: 'Luca Pérez',
-    initials: 'LP',
-    avatarGradient: 'from-emerald-400 to-teal-500',
-    type: 'TDAH Hiperactivo',
-    age: 8,
-    grade: '3ro B',
-    attention: 62,
-    participation: 7,
-    alerts: 0,
-    strengths: ['Kinestésico', 'Matemático'],
-  },
-  {
-    id: 4,
-    name: 'Ale Torres',
-    initials: 'AT',
-    avatarGradient: 'from-violet-400 to-purple-500',
-    type: 'TDAH Combinado',
-    age: 9,
-    grade: '3ro B',
-    attention: 41,
-    participation: 5,
-    alerts: 2,
-    strengths: ['Sensible', 'Musical'],
-  },
-]
+// Adapta la respuesta del backend al shape que espera el frontend
+const mapStudent = (s) => ({
+  id:            s.id,
+  name:          s.nombre,
+  age:           s.edad,
+  grade:         s.grado,
+  type:          `TDAH ${s.tipo_tdah}`,          // "Combinado" → "TDAH Combinado"
+  strengths:     s.fortalezas ?? [],
+  attention:     s.atencion_promedio ?? 0,
+  participation: s.puntaje_participacion ?? 0,
+  alerts:        s.alertas ?? 0,                  // cuando el backend lo tenga
+  // Generados en frontend porque el backend no los devuelve aún
+  initials:      s.nombre.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+  avatarGradient: 'from-indigo-400 to-violet-500',
+})
+
+import api from '../api'
 
 // Filtros de tipo TDAH disponibles
 const FILTERS = [
-  { value: 'todos',      label: 'Todos'             },
-  { value: 'combinado',  label: 'TDAH Combinado'    },
-  { value: 'inatento',   label: 'TDAH Inatento'     },
-  { value: 'hiperactivo',label: 'TDAH Hiperactivo'  },
+  { value: 'todos',       label: 'Todos'             },
+  { value: 'combinado',   label: 'TDAH Combinado'    },
+  { value: 'inatento',    label: 'TDAH Inatento'     },
+  { value: 'hiperactivo', label: 'TDAH Hiperactivo'  },
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,7 +64,54 @@ function AlertSummaryBar({ students }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-componente: modal "Agregar estudiante" (placeholder UI)
 // ─────────────────────────────────────────────────────────────────────────────
-function AddStudentModal({ onClose }) {
+function AddStudentModal({ onClose, onStudentAdded }) {
+ const [form, setForm] = useState({
+	  nombre:                '',
+	  edad:                  '',
+	  grado:                 '',
+	  tipo_tdah:             'Combinado',
+	  atencion_promedio:     '',     
+	  puntaje_participacion: '',      
+	  fortalezas:            '',
+	})
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState(null)
+
+  const handleChange = (e) => {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+  }
+
+  const handleSave = () => {
+    // Validación básica
+    if (!form.nombre.trim() || !form.edad || !form.grado.trim()) {
+      setError('Nombre, edad y grado son obligatorios.')
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+    const payload = {
+	nombre:                form.nombre.trim(),
+	edad:                  parseInt(form.edad),
+	grado:                 form.grado.trim(),
+	tipo_tdah:             form.tipo_tdah,
+	atencion_promedio:     form.atencion_promedio     !== '' ? parseInt(form.atencion_promedio)     : 0,
+	puntaje_participacion: form.puntaje_participacion !== '' ? parseInt(form.puntaje_participacion) : 0,
+	fortalezas:            form.fortalezas
+	? form.fortalezas.split(',').map((f) => f.trim()).filter(Boolean)
+	: [],
+	profesor: 1,
+	}
+
+    api.post('/students/', payload)
+      .then((res) => {
+        onStudentAdded(res.data)   // ← notifica al padre
+        onClose()
+      })
+      .catch(() => setError('No se pudo guardar el estudiante. Intenta de nuevo.'))
+      .finally(() => setSaving(false))
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
@@ -134,34 +141,122 @@ function AddStudentModal({ onClose }) {
           </button>
         </div>
 
+        {/* Error banner */}
+        {error && (
+          <div className="flex items-center gap-2 px-3 py-2.5 mb-4 rounded-xl bg-red-50 border border-red-100">
+            <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+            <p className="text-xs text-red-600 font-medium">{error}</p>
+          </div>
+        )}
+
         {/* Fields */}
         <div className="space-y-4">
-          {[
-            { label: 'Nombre completo', placeholder: 'Ej: María López', type: 'text' },
-            { label: 'Edad',            placeholder: 'Ej: 8',           type: 'number' },
-            { label: 'Grado',           placeholder: 'Ej: 3ro B',       type: 'text' },
-          ].map((field) => (
-            <div key={field.label}>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+              Nombre completo <span className="text-red-400">*</span>
+            </label>
+            <input
+              name="nombre"
+              type="text"
+              value={form.nombre}
+              onChange={handleChange}
+              placeholder="Ej: María López"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex-1">
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                {field.label}
+                Edad <span className="text-red-400">*</span>
               </label>
               <input
-                type={field.type}
-                placeholder={field.placeholder}
+                name="edad"
+                type="number"
+                value={form.edad}
+                onChange={handleChange}
+                placeholder="Ej: 8"
+                min={4} max={18}
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
               />
             </div>
-          ))}
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                Grado <span className="text-red-400">*</span>
+              </label>
+              <input
+                name="grado"
+                type="text"
+                value={form.grado}
+                onChange={handleChange}
+                placeholder="Ej: 3ro B"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+              />
+            </div>
+          </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1.5">
               Subtipo TDAH
             </label>
-            <select className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none">
-              <option>TDAH Combinado</option>
-              <option>TDAH Inatento</option>
-              <option>TDAH Hiperactivo</option>
+            <select
+              name="tipo_tdah"
+              value={form.tipo_tdah}
+              onChange={handleChange}
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+            >
+              <option value="Combinado">TDAH Combinado</option>
+              <option value="Inatento">TDAH Inatento</option>
+              <option value="Hiperactivo">TDAH Hiperactivo</option>
             </select>
+          </div>
+
+	<div className="flex gap-3">
+	  <div className="flex-1">
+	    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+	      Atención promedio
+	      <span className="text-slate-400 font-normal ml-1">(0 – 100%)</span>
+	    </label>
+	    <input
+	      name="atencion_promedio"
+	      type="number"
+	      value={form.atencion_promedio}
+	      onChange={handleChange}
+	      placeholder="Ej: 75"
+	      min={0} max={100}
+	      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+	    />
+	  </div>
+	  <div className="flex-1">
+	    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+	      Participación
+	      <span className="text-slate-400 font-normal ml-1">(0 – 10 pts)</span>
+	    </label>
+	    <input
+	      name="puntaje_participacion"
+	      type="number"
+	      value={form.puntaje_participacion}
+	      onChange={handleChange}
+	      placeholder="Ej: 8"
+	      min={0} max={10}
+	      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+	    />
+	  </div>
+	</div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+              Fortalezas
+              <span className="text-slate-400 font-normal ml-1">(separadas por coma)</span>
+            </label>
+            <input
+              name="fortalezas"
+              type="text"
+              value={form.fortalezas}
+              onChange={handleChange}
+              placeholder="Ej: Visual, Creativo, Musical"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+            />
           </div>
         </div>
 
@@ -169,15 +264,17 @@ function AddStudentModal({ onClose }) {
         <div className="flex gap-3 mt-6">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all"
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all disabled:opacity-60"
           >
-            Guardar
+            {saving ? 'Guardando...' : 'Guardar'}
           </button>
         </div>
       </div>
@@ -185,27 +282,289 @@ function AddStudentModal({ onClose }) {
   )
 }
 
+//editar estudiantes 
+
+function EditStudentModal({ student, onClose, onStudentUpdated }) {
+  const [form, setForm] = useState({
+    nombre:                student.name,
+    edad:                  String(student.age),
+    grado:                 student.grade,
+    tipo_tdah:             student.type.replace('TDAH ', ''),
+    atencion_promedio:     String(student.attention),
+    puntaje_participacion: String(student.participation),
+    fortalezas:            student.strengths.join(', '),
+  })
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState(null)
+
+  const handleChange = (e) =>
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+
+  const handleSave = () => {
+    if (!form.nombre.trim() || !form.edad || !form.grado.trim()) {
+      setError('Nombre, edad y grado son obligatorios.')
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+
+    const payload = {
+      nombre:                form.nombre.trim(),
+      edad:                  parseInt(form.edad),
+      grado:                 form.grado.trim(),
+      tipo_tdah:             form.tipo_tdah,
+      atencion_promedio:     form.atencion_promedio     !== '' ? parseInt(form.atencion_promedio)     : 0,
+      puntaje_participacion: form.puntaje_participacion !== '' ? parseInt(form.puntaje_participacion) : 0,
+      fortalezas:            form.fortalezas
+        ? form.fortalezas.split(',').map((f) => f.trim()).filter(Boolean)
+        : [],
+      profesor: 1,
+    }
+
+    api.patch(`/students/${student.id}/`, payload)
+      .then((res) => {
+        onStudentUpdated(res.data)
+        onClose()
+      })
+      .catch(() => setError('No se pudo actualizar el estudiante. Intenta de nuevo.'))
+      .finally(() => setSaving(false))
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 z-10">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3
+              className="text-lg font-bold text-slate-800"
+              style={{ fontFamily: "'Poppins', sans-serif" }}
+            >
+              Editar estudiante
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">{student.name}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+          >
+            <X size={16} strokeWidth={2} />
+          </button>
+        </div>
+
+        {/* Error banner */}
+        {error && (
+          <div className="flex items-center gap-2 px-3 py-2.5 mb-4 rounded-xl bg-red-50 border border-red-100">
+            <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+            <p className="text-xs text-red-600 font-medium">{error}</p>
+          </div>
+        )}
+
+        {/* Fields */}
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+              Nombre completo <span className="text-red-400">*</span>
+            </label>
+            <input
+              name="nombre"
+              type="text"
+              value={form.nombre}
+              onChange={handleChange}
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                Edad <span className="text-red-400">*</span>
+              </label>
+              <input
+                name="edad"
+                type="number"
+                value={form.edad}
+                onChange={handleChange}
+                min={4} max={18}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                Grado <span className="text-red-400">*</span>
+              </label>
+              <input
+                name="grado"
+                type="text"
+                value={form.grado}
+                onChange={handleChange}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+              Subtipo TDAH
+            </label>
+            <select
+              name="tipo_tdah"
+              value={form.tipo_tdah}
+              onChange={handleChange}
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+            >
+              <option value="Combinado">TDAH Combinado</option>
+              <option value="Inatento">TDAH Inatento</option>
+              <option value="Hiperactivo">TDAH Hiperactivo</option>
+            </select>
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                Atención promedio
+                <span className="text-slate-400 font-normal ml-1">(0 – 100%)</span>
+              </label>
+              <input
+                name="atencion_promedio"
+                type="number"
+                value={form.atencion_promedio}
+                onChange={handleChange}
+                min={0} max={100}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                Participación
+                <span className="text-slate-400 font-normal ml-1">(0 – 10 pts)</span>
+              </label>
+              <input
+                name="puntaje_participacion"
+                type="number"
+                value={form.puntaje_participacion}
+                onChange={handleChange}
+                min={0} max={10}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+              Fortalezas
+              <span className="text-slate-400 font-normal ml-1">(separadas por coma)</span>
+            </label>
+            <input
+              name="fortalezas"
+              type="text"
+              value={form.fortalezas}
+              onChange={handleChange}
+              placeholder="Ej: Visual, Creativo, Musical"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all disabled:opacity-60"
+          >
+            {saving ? 'Guardando...' : 'Guardar cambios'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // StudentsView
 // ─────────────────────────────────────────────────────────────────────────────
 export default function StudentsView() {
   const navigate = useNavigate()
 
+  const [students,     setStudents]     = useState([])       // ← antes era MOCK_STUDENTS
+  const [loading,      setLoading]      = useState(true)     // ← estado de carga
+  const [error,        setError]        = useState(null)     // ← estado de error
   const [search,       setSearch]       = useState('')
   const [activeFilter, setActiveFilter] = useState('todos')
   const [showModal,    setShowModal]    = useState(false)
+  const handleStudentAdded = (newStudentRaw) => {
+  setStudents((prev) => [...prev, mapStudent(newStudentRaw)])
+}
+ const [editingStudent, setEditingStudent] = useState(null)   // ← nuevo
 
-  // Filtrado reactivo: búsqueda + tipo TDAH
+ const handleStudentUpdated = (updatedRaw) => {
+  setStudents((prev) =>
+    prev.map((s) => s.id === updatedRaw.id ? mapStudent(updatedRaw) : s)
+  )
+ }
+
+  // ── Carga desde la API ──────────────────────────────────────────────────────
+useEffect(() => {
+  api.get('/students/')
+    .then((res) => {
+      console.log('DATA:', res.data)
+      setStudents(res.data.map(mapStudent))   // ← mapeo aquí
+    })
+    .catch((err) => {
+      console.log('ERROR:', err.message, err.response?.status)
+      setError('No se pudieron cargar los estudiantes.')
+    })
+    .finally(() => setLoading(false))
+}, [])
+  // ── Filtrado reactivo: búsqueda + tipo TDAH ─────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
-    return MOCK_STUDENTS.filter((s) => {
+    return students.filter((s) => {
       const matchSearch = !q || s.name.toLowerCase().includes(q) || s.type.toLowerCase().includes(q)
       const matchFilter =
         activeFilter === 'todos' ||
         s.type.toLowerCase().includes(activeFilter)
       return matchSearch && matchFilter
     })
-  }, [search, activeFilter])
+  }, [search, activeFilter, students])  // ← students en deps en lugar de MOCK_STUDENTS
+
+  // ── Estados de carga / error (no tocan el layout principal) ────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="w-8 h-8 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 bg-white rounded-2xl border border-slate-100 shadow-[0_2px_16px_rgba(15,23,42,0.06)]">
+        <AlertCircle size={28} strokeWidth={1.5} className="text-red-400 mb-3" />
+        <p className="text-sm font-semibold text-slate-600">{error}</p>
+        <button
+          onClick={() => { setError(null); setLoading(true); api.get('/students/').then((r) => setStudents(r.data)).catch(() => setError('No se pudieron cargar los estudiantes.')).finally(() => setLoading(false)) }}
+          className="mt-4 px-4 py-2 rounded-xl text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all"
+        >
+          Reintentar
+        </button>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -221,7 +580,7 @@ export default function StudentsView() {
               Mis Estudiantes
             </h1>
             <p className="text-slate-500 mt-1 text-sm">
-              <span className="font-semibold text-indigo-600">{MOCK_STUDENTS.length}</span>{' '}
+              <span className="font-semibold text-indigo-600">{students.length}</span>{' '}
               estudiantes con TDAH · 3ro B
             </p>
           </div>
@@ -263,7 +622,7 @@ export default function StudentsView() {
         </header>
 
         {/* ── ALERT SUMMARY ──────────────────────────────────────────────── */}
-        <AlertSummaryBar students={MOCK_STUDENTS} />
+        <AlertSummaryBar students={students} />
 
         {/* ── FILTROS POR TIPO ───────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-2">
@@ -289,17 +648,18 @@ export default function StudentsView() {
           </span>
         </div>
 
-        {/* ── GRID DE CARDS ──────────────────────────────────────────────── */}
-        {filtered.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {filtered.map((student) => (
-              <StudentCard
-                key={student.id}
-                student={student}
-                onView={() => navigate(`/students/${student.id}`)}
-                onAssistant={() => navigate(`/assistant?student=${student.id}`)}
-              />
-            ))}
+	  {/* ── GRID DE CARDS ──────────────────────────────────────────────── */}
+	  {filtered.length > 0 ? (
+	   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+	     {filtered.map((student) => (
+			  <StudentCard
+			  key={student.id}
+			  student={student}
+			  onView={() => navigate(`/students/${student.id}`)}
+			  onAssistant={() => navigate(`/assistant?student=${student.id}`)}
+			  onEdit={() => setEditingStudent(student)}    // ← nuevo
+			  />            
+		  ))}
           </div>
         ) : (
           /* Estado vacío */
@@ -328,8 +688,22 @@ export default function StudentsView() {
 
       </div>
 
-      {/* ── MODAL ──────────────────────────────────────────────────────────── */}
-      {showModal && <AddStudentModal onClose={() => setShowModal(false)} />}
+      {/* ── MODAL AGREGAR ──────────────────────────────────────────────────── */}
+      {showModal && (
+        <AddStudentModal
+          onClose={() => setShowModal(false)}
+          onStudentAdded={handleStudentAdded}
+        />
+      )}
+
+      {/* ── MODAL EDITAR ───────────────────────────────────────────────────── */}
+      {editingStudent && (
+        <EditStudentModal
+          student={editingStudent}
+          onClose={() => setEditingStudent(null)}
+          onStudentUpdated={handleStudentUpdated}
+        />
+      )}
     </>
   )
 }
