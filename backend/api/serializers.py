@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Estudiante,EntradaBitacora
+from .models import Estudiante,EntradaBitacora,AnalisisBitacora
 
 
 class EstudianteSerializer(serializers.ModelSerializer):
@@ -11,3 +11,8 @@ class EntradaBitacoraSerializer(serializers.ModelSerializer):
     class Meta:
         model = EntradaBitacora
         fields = '__all__'
+
+class AnalisisSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = AnalisisBitacora
+        fields = ['resumen', 'patron', 'sugerencia', 'generado_en']

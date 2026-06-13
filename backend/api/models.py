@@ -1,5 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+import hashlib
+
 
 
 # ─────────────────────────────────────────
@@ -154,3 +156,31 @@ class Estrategia(models.Model):
 
     def __str__(self):
         return self.titulo
+
+class AnalisisBitacora(models.Model):
+    estudiante  = models.OneToOneField(
+        Estudiante,
+        on_delete=models.CASCADE,
+        related_name='analisis'
+    )
+    resumen     = models.TextField()
+    patron      = models.TextField()
+    sugerencia  = models.TextField()
+    generado_en = models.DateTimeField(auto_now=True)
+    entradas_hash = models.CharField(max_length=64)
+
+    class Meta:
+        db_table = 'analisis_bitacora'
+        verbose_name = 'Análisis de Bitácora'
+
+    def __str__(self):
+        return f'Análisis de {self.estudiante.nombre}'
+
+    @staticmethod
+    def calcular_hash(entradas_qs):
+        """Genera un hash de las entradas actuales del estudiante."""
+        data = ''.join(
+            f"{e.id}{e.titulo}{e.categoria}{e.puntaje_atencion}{e.creado_en}"
+            for e in entradas_qs
+        )
+        return hashlib.md5(data.encode()).hexdigest()
